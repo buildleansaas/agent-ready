@@ -1,0 +1,159 @@
+---
+name: agent-ready
+description: Make a website agent-ready. Scan it with Cloudflare's isitagentready.com scanner, then add Content Signals (search, ai-input, ai-train) to every group in robots.txt and prove it live. Use when the user asks "is my site agent ready", mentions isitagentready or "agent readiness", "content signals", "Content-Signal", "robots.txt for AI", "allow AI crawlers", "let ChatGPT/Claude/Perplexity use my site", or wants their site to reach Level 2 "Bot-Aware".
+---
+
+# agent-ready
+
+Get a website to Level 2 "Bot-Aware" on https://isitagentready.com by stating its AI usage policy in robots.txt. For most sites that already have a robots.txt and a sitemap, the only missing piece is one line per group: `Content-Signal: ...`.
+
+Words used below:
+- **robots.txt**: a plain text file at `https://site/robots.txt` that tells crawlers what they may fetch.
+- **crawler**: a program that downloads pages automatically (Googlebot, GPTBot, ClaudeBot...).
+- **user agent**: the name a crawler gives itself. robots.txt rules are grouped under `User-Agent:` lines, and a crawler reads only the group that matches its name (or `*`).
+- **AI agent**: software that reads or acts on web pages for a person, such as ChatGPT answering a question with your page.
+- **Content Signals**: a robots.txt line that says how your content may be used after it is fetched. Spec: https://contentsignals.org and IETF draft-romm-aipref-contentsignals. RFC 9309 lets crawlers interpret extra lines like this one, and says parsing them must not interfere with the standard rules or end a group. So the rest of your rules keep working for crawlers that don't know it.
+
+The scanner's score is not the goal. Search and AI-answer traffic is. Do the cheap, safe fix; skip the rest (see "What not to do").
+
+## 1. Scan
+
+The scanner script lives in this skill's own folder, not in the user's repo. Your working directory is the user's repo, so call it by full path. Set `SKILL_DIR` to the directory this SKILL.md is in (for example `~/.claude/skills/agent-ready`). Shell variables don't carry over between commands, so set it again in every command that uses it:
+
+```sh
+SKILL_DIR=~/.claude/skills/agent-ready   # the folder containing this SKILL.md
+node "$SKILL_DIR/scripts/scan.mjs" https://example.com            # Content Site checks, target Level 2
+node "$SKILL_DIR/scripts/scan.mjs" https://example.com --json     # machine-readable
+node "$SKILL_DIR/scripts/scan.mjs" https://example.com --preset all
+```
+
+The same goes for the references: read `$SKILL_DIR/references/fixes.md` and `$SKILL_DIR/references/policy.md`.
+
+Exit 0 = already at the target level. Exit 1 = below it. Exit 2 = the scanner could not load the site or the API failed (often a firewall or bot protection blocking the scanner; say so and stop).
+
+If the script is not available (no Node 18+), call the API directly:
+
+```sh
+curl -s -X POST https://isitagentready.com/api/scan -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","enabledChecks":["robotsTxt","sitemap","linkHeaders","dnsAid","markdownNegotiation","robotsTxtAiRules","contentSignals"]}'
+```
+
+Read `level`, `levelName` and `nextLevel.requirements[].check`.
+- Level 0 and `robotsTxt` or `sitemap` failing: fix those first (publish a robots.txt that returns 200 as plain text, and a sitemap.xml listed in it). Then continue.
+- `contentSignals` failing: this skill's main fix. Continue.
+- Already Level 2: report it and stop unless the user wants to change the policy.
+
+Also run the soft-404 check. An unknown URL should return 404, not 200:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://example.com/agent-ready-made-up-path-12345
+```
+
+If it prints 200, tell the user. Pages that return 200 for missing URLs (a "soft 404") waste crawl budget and confuse scanners. Fixing it is a separate task.
+
+## 2. Pick the policy (ask the user)
+
+Do not choose for them. Explain the three signals in plain words (details in `$SKILL_DIR/references/policy.md`):
+
+- `search`: may search engines index the pages and show links and short excerpts? (Not AI summaries.)
+- `ai-input`: may AI tools fetch pages to answer a question right now, such as ChatGPT, Claude or Perplexity citing the page?
+- `ai-train`: may AI companies use the content to train or fine-tune models?
+
+Recommend `search=yes, ai-input=yes`. That keeps search traffic and lets AI answers cite and link the site. `ai-train` is the owner's call: `yes` if they want their content known to future models, `no` if they don't want to give it away. Leaving a signal out means "no preference stated", not "no".
+
+The line looks like:
+
+```
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+```
+
+## 3. Find how robots.txt is served
+
+Look at the live file first so you know what you are changing:
+
+```sh
+curl -s https://example.com/robots.txt
+```
+
+Then find the source in the repo or platform:
+
+| You find | It is |
+|---|---|
+| `public/robots.txt`, `static/robots.txt`, or `robots.txt` in the web root | A static file. Edit it. |
+| `app/robots.ts` or `app/robots.js` (Next.js App Router) | Generated by Next. Check the Next version (step 4). |
+| `app/robots.txt/route.ts` | A route handler. Edit the text it builds. |
+| `pages/robots.txt.js` or an API route rewriting `/robots.txt` | Generated by code. Edit the code. |
+| WordPress, no physical file | WordPress's virtual robots.txt, often managed by Yoast or Rank Math. |
+| Webflow, Wix, Shopify, Squarespace | A platform setting or theme template. |
+| Comment lines saying Cloudflare manages it | Cloudflare's managed robots.txt. |
+
+Exact fixes per platform: `$SKILL_DIR/references/fixes.md`.
+
+## 4. Apply the fix
+
+The rule: put the `Content-Signal:` line in **every** User-Agent group, right after the group's `User-Agent:` line(s). A crawler reads only the group that matches it, so a signal in the `*` group says nothing to GPTBot if GPTBot has its own group.
+
+Do not change anything else. No new groups, no new or removed `Allow`/`Disallow` lines, no reordering. Keep any environment logic (for example "block everything on preview deploys").
+
+Never add a group for a specific crawler (GPTBot, ClaudeBot...) that wasn't there before. A crawler obeys only the most specific group that matches it. A new `User-agent: GPTBot` group with `Allow: /` means GPTBot stops reading the `*` group and ignores every `Disallow` in it.
+
+Before you edit, save the "before" file from the same environment you will test the "after" file in (step 5). Run the site locally or on a preview deploy without your change, then:
+
+```sh
+URL=http://localhost:3000   # or the preview URL; use the same one in step 5
+curl -s $URL/robots.txt > /tmp/robots.before.txt
+```
+
+Don't compare a production "before" against a local or preview "after". Many sites serve `Disallow: /` outside production, and that shows up as a false difference. If you can only test in production (hosted platforms), take both copies from production.
+
+Next.js gotcha: before Next 16.3, `MetadataRoute.Robots` in `app/robots.ts` cannot emit `Content-Signal`. On 16.3 or later, add `other: { "Content-Signal": "..." }` to each rule. On older versions, replace `app/robots.ts` with a route handler at `app/robots.txt/route.ts` and delete `robots.ts` (both cannot exist together). Full code in `$SKILL_DIR/references/fixes.md`.
+
+## 5. Prove it before deploy
+
+Run the site with your change in the same environment as the "before" file (step 4), then:
+
+```sh
+URL=http://localhost:3000   # same as step 4
+curl -s $URL/robots.txt > /tmp/robots.after.txt
+grep -ci '^content-signal:' /tmp/robots.after.txt
+awk 'tolower($0) ~ /^user-agent:/ { if (!ua) g++; ua=1; next } /^[^#[:space:]]/ { ua=0 } END { print g+0 }' /tmp/robots.after.txt
+diff -ibB <(grep -vi '^content-signal:' /tmp/robots.before.txt) <(grep -vi '^content-signal:' /tmp/robots.after.txt) && echo "no other changes"
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' $URL/robots.txt
+curl -s -o /dev/null -w '%{http_code}\n' $URL/
+```
+
+Pass when:
+- the `Content-Signal` count equals the group count (the awk line counts groups, so several `User-Agent:` lines in a row count as one group),
+- the diff prints nothing and says "no other changes". With the `Content-Signal` lines removed, the file must match the "before" file. The only differences ignored are letter case, spacing and blank lines. Any other difference is a changed rule: undo it,
+- robots.txt returns `200 text/plain`,
+- the homepage returns 200.
+
+Run the repo's own tests or build too.
+
+## 6. Deploy
+
+Ship it the way the project ships (PR, merge, deploy). Hosted platforms: save and publish in the platform.
+
+## 7. Prove it live and rescan
+
+```sh
+SKILL_DIR=~/.claude/skills/agent-ready   # the folder containing this SKILL.md
+curl -s https://example.com/robots.txt | grep -ci '^content-signal:'   # equals the group count
+curl -s -o /dev/null -w '%{http_code}\n' https://example.com/          # 200
+node "$SKILL_DIR/scripts/scan.mjs" https://example.com                  # Level 2, exit 0
+```
+
+If the scan still shows `contentSignals` failing, check for a CDN cache on robots.txt and for a second robots.txt source (for example a platform setting overriding a file, or Cloudflare prepending its own). Report what you verified and what you could not.
+
+## What not to do
+
+- Don't open the user's site in a browser if it runs ads. Use curl. Test traffic hurts ad revenue.
+- Don't add `Disallow` rules or block crawlers as part of this. Content Signals are about use, not access.
+- Don't set the signals without asking the owner. `ai-train` especially is their decision.
+- Don't chase the scanner's higher levels by default. Skip, unless the site has a reason:
+  - Markdown for Agents (content negotiation): on an ad-supported site it hands agents the content without the ads or context.
+  - DNS-AID: no real adoption yet.
+  - MCP server card, A2A, OAuth discovery, API catalog, commerce checks: only if the site really offers an API or store for agents.
+  - Link headers: low value for a content site.
+- Don't keep both `app/robots.ts` and `app/robots.txt/route.ts` in a Next.js app.
+- Don't export constants from a Next.js route file. Next 15+ route files may only export HTTP handlers and segment config.
