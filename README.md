@@ -51,9 +51,9 @@ The skill then:
    - `ai-train`: let AI companies train on my content
 3. Finds how your robots.txt is made: a static file, Next.js `robots.ts` or a route handler, WordPress, Shopify, Wix, Webflow, or Cloudflare's managed robots.txt.
 4. Adds the line to every group in robots.txt and changes nothing else.
-5. Proves it locally (one signal per group, no new `Disallow` lines), then after deploy proves it live and rescans.
+5. Proves it locally (one signal per group, nothing else in the file changed), then after deploy proves it live and rescans.
 
-You can also run the scanner on its own. It needs Node 18 or later and has no dependencies:
+You can also run the scanner on its own from this folder (`~/.claude/skills/agent-ready` if you installed it there). It needs Node 18 or later and has no dependencies:
 
 ```sh
 node scripts/scan.mjs https://your-site.com                 # exit 0 if Level 2 or higher, 1 if lower, 2 on error
@@ -65,7 +65,7 @@ node scripts/scan.mjs https://your-site.com --target 1 --json
 
 robots.txt is the plain text file that tells crawlers (programs like Googlebot or GPTBot that download pages) what they may fetch. It has never said what they may *do* with what they fetch. Content Signals ([contentsignals.org](https://contentsignals.org)) add one line for that: may you index me for search, use me in AI answers, train on me.
 
-For most sites that already have a robots.txt and a sitemap, that one line is the only thing between Level 1 and Level 2 on Cloudflare's scanner. We added it to six of our sites in an afternoon. Crawlers that don't know the line ignore it, so it doesn't change how anything else crawls you.
+For most sites that already have a robots.txt and a sitemap, that one line is the only thing between Level 1 and Level 2 on Cloudflare's scanner. We added it to six of our sites in an afternoon. Under the robots.txt standard (RFC 9309), an extra line like this must not interfere with the rules around it, so it doesn't change how anything else crawls you.
 
 ## What it won't do
 
@@ -108,4 +108,4 @@ agent-ready is free and stays free. If it saved you some hassle: [🍺 buy me a 
 
 Want this checked on every site, every week? ScaleSleek is coming soon: https://www.scalesleek.com
 
-MIT licensed. Built by [Build Lean SaaS](https://vibehowto.com/projects/agent-ready).
+MIT licensed. Built by [Build Lean SaaS](https://vibehowto.com/projects/robots-txt-for-ai).

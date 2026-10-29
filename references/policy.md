@@ -23,7 +23,7 @@ Each value is `yes` or `no`. If you leave a signal out, you haven't stated a pre
 ## What the signals do and don't do
 
 - They are a stated preference, not a lock. A crawler that ignores them can still use the content. If you need to stop a crawler from fetching pages, that is a `Disallow` rule or a firewall rule, which is a different decision.
-- Crawlers that don't understand `Content-Signal` skip the line (RFC 9309 says unknown lines are ignored). Adding it does not change how Google or Bing crawl you.
+- robots.txt's standard (RFC 9309, section 2.2.4) says crawlers MAY interpret records other than the standard ones, and that parsing them "MUST NOT interfere with the parsing of explicitly defined records" (its example: such a record "MUST NOT terminate a group"). So the line doesn't break the `Allow`/`Disallow` rules around it, and a crawler that doesn't use it crawls you exactly as before.
 - A crawler reads only the group that matches its user agent. That is why the line goes into every group, not only `User-Agent: *`.
 
 ## Tradeoffs

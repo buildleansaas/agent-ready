@@ -50,7 +50,7 @@ Check the installed version: `npm ls next` (or read `package.json`).
 
 ### Next 16.3 or later: use `other`
 
-Next 16.3.0 added an `other` field to each rule for directives Next doesn't know. They are written verbatim into that rule's group (after Allow/Disallow, which is fine):
+Next 16.3.0 added an `other` field to each rule for directives Next doesn't know. They are written verbatim into that rule's group (after Allow/Disallow, which is fine). Add `other` to every rule that already exists, and don't add new rules:
 
 ```ts
 import type { MetadataRoute } from "next";
@@ -59,9 +59,9 @@ const CONTENT_SIGNAL = "search=yes, ai-input=yes, ai-train=yes";
 
 export default function robots(): MetadataRoute.Robots {
   return {
+    // Keep the existing rules exactly as they were. Only add `other` to each one.
     rules: [
-      { userAgent: "*", allow: "/", other: { "Content-Signal": CONTENT_SIGNAL } },
-      { userAgent: "GPTBot", allow: "/", other: { "Content-Signal": CONTENT_SIGNAL } },
+      { userAgent: "*", allow: "/", disallow: "/api/", other: { "Content-Signal": CONTENT_SIGNAL } },
     ],
     sitemap: "https://www.example.com/sitemap.xml",
   };
@@ -76,27 +76,40 @@ Docs: https://nextjs.org/docs/app/api-reference/file-conventions/metadata/robots
 
 Keep constants un-exported: Next 15+ route files may only export HTTP handlers and segment config (`dynamic`, `revalidate`...). Exporting anything else fails the build.
 
+**Port the site's existing rules. Don't invent new ones.** Copy every group from the old `robots.ts` (or from the live `/robots.txt`) as it is: the same user agents, the same `Allow` and `Disallow` lines, the same `Sitemap` and `Host` lines. The only new line is `Content-Signal`.
+
+> Warning: do not add groups for AI crawlers (GPTBot, ClaudeBot...) that weren't there before. A crawler obeys only the most specific group that matches it. Give GPTBot its own `User-agent: GPTBot` / `Allow: /` group and it stops reading the `User-agent: *` group, so every `Disallow` there (`/admin`, `/api`, `/checkout`...) no longer applies to it.
+
+The template below holds the rules as data. Fill `GROUPS` with the old file's groups:
+
 ```ts
 // app/robots.txt/route.ts
-// Next's MetadataRoute.Robots can't emit Content-Signal, so robots.txt is written by hand.
-
-const BASE = "https://www.example.com";
-
-const AI_CRAWLERS = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended", "CCBot"];
+// Next's MetadataRoute.Robots (before 16.3) can't emit Content-Signal, so robots.txt is written by hand.
 
 // Content Signals (https://contentsignals.org). Repeated in every group because a
 // crawler only reads the group that matches its user agent.
 const CONTENT_SIGNAL = "search=yes, ai-input=yes, ai-train=yes";
 
+// Ported 1:1 from the old app/robots.ts. Same groups, same order, same rules.
+const GROUPS: { userAgents: string[]; allow?: string[]; disallow?: string[] }[] = [
+  { userAgents: ["*"], allow: ["/"], disallow: ["/api/", "/admin/"] }, // example: replace with the old rules
+];
+
+const SITEMAPS = ["https://www.example.com/sitemap.xml"]; // from the old file
+
 export const dynamic = "force-static";
 
 export function GET() {
-  const rules = [{ userAgent: "*", allow: "/" }, ...AI_CRAWLERS.map((userAgent) => ({ userAgent, allow: "/" }))];
-
-  const groups = rules.map(
-    (rule) => `User-Agent: ${rule.userAgent}\nContent-Signal: ${CONTENT_SIGNAL}\nAllow: ${rule.allow}`,
+  const groups = GROUPS.map((g) =>
+    [
+      ...g.userAgents.map((ua) => `User-Agent: ${ua}`),
+      `Content-Signal: ${CONTENT_SIGNAL}`,
+      ...(g.allow ?? []).map((path) => `Allow: ${path}`),
+      ...(g.disallow ?? []).map((path) => `Disallow: ${path}`),
+    ].join("\n"),
   );
-  const body = `${groups.join("\n\n")}\n\nSitemap: ${BASE}/sitemap.xml\n`;
+  const sitemaps = SITEMAPS.map((url) => `Sitemap: ${url}`).join("\n");
+  const body = `${groups.join("\n\n")}\n\n${sitemaps}\n`;
 
   return new Response(body, {
     headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -104,7 +117,7 @@ export function GET() {
 }
 ```
 
-Port the old file's rules exactly. Copy every user agent, every `allow` and `disallow`, and the sitemap and host lines.
+Prove the port with the whole-file diff in SKILL.md step 5. Apart from the `Content-Signal` lines, the old and new output must match. Small differences are fine, such as `User-agent` spelled `User-Agent` (both work) or a different blank line. A changed, added or missing rule is not fine.
 
 If the old `robots.ts` changed its output by environment (for example `Disallow: /` when `VERCEL_ENV !== "production"`), keep that logic. With `force-static`, the file is built once per deploy, so a build-time env check still works. Drop `force-static` only if the old file read request-time data.
 
@@ -144,22 +157,26 @@ Edit the theme's `templates/robots.txt.liquid` (create it in the theme code edit
 {% for group in robots.default_groups %}
   {{- group.user_agent }}
 
-
   {%- for rule in group.rules -%}
     {{ rule }}
-  {%- endfor -%}
-
-
-  {{ 'Content-Signal: search=yes, ai-input=yes, ai-train=yes' }}
-
-
-  {%- if group.sitemap != blank -%}
-    {{ group.sitemap }}
-  {%- endif -%}
+  {%- endfor %}
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+{% if group.sitemap != blank -%}
+{{ group.sitemap }}
+{% endif %}
 {% endfor %}
 ```
 
-The signal lands after the group's rules rather than right after `User-agent`. That is still inside the group, which is what matters. The whitespace markers (`{%-`, `-%}`) are copied from Shopify's example; save a copy of the current `/robots.txt` first and compare the live output after publishing. Docs: https://shopify.dev/docs/storefronts/themes/seo/robots-txt
+The signal lands after the group's rules rather than right after `User-agent`. It is still inside the group, which is what matters.
+
+Mind the whitespace markers. The tags around the signal line deliberately have no `-` on the side touching it (`{%- endfor %}` before it, `{% if` after it). A `-` there would strip the line break and could join the signal onto the next group's `User-agent` line, which breaks that group. An extra blank line in the output is harmless.
+
+Test it safely:
+1. Save a copy of the current live `/robots.txt`.
+2. Duplicate the live theme and make the change in the unpublished copy first. Get the template right there before touching the live theme.
+3. After you publish, curl `/robots.txt` and run the checks in SKILL.md steps 5 and 7. Every `Content-Signal` line should be on its own line, and nothing else should have changed.
+
+We have not rendered this template on a real store. Docs: https://shopify.dev/docs/storefronts/themes/seo/robots-txt
 
 ## Wix
 
@@ -175,20 +192,24 @@ We could not load that page directly to confirm every detail, and we have not ve
 
 ## Squarespace
 
-We could not find a Squarespace help page that lets you edit robots.txt freely. Check your site's crawler settings. If there is no editor, the only route we know of is a proxy or CDN in front of the site that serves its own robots.txt (for example Cloudflare's managed robots.txt, below).
+We could not find a Squarespace help page that lets you edit robots.txt freely. Check your site's crawler settings. If there is no editor, the only route we know of is a proxy or CDN in front of the site that rewrites `/robots.txt`. Cloudflare's managed robots.txt (below) is **not** that route if you want to allow AI use: it adds nothing unless you block something.
 
 ## Cloudflare managed robots.txt
 
-If the site is behind Cloudflare, it can manage robots.txt for you. Cloudflare docs: https://developers.cloudflare.com/bots/additional-configurations/managed-robots-txt/ and the policy announcement: https://blog.cloudflare.com/content-signals-policy/
+If the site is behind Cloudflare, check whether this feature is on before you change anything, because it changes what `/robots.txt` returns. Source: https://developers.cloudflare.com/bots/additional-configurations/managed-robots-txt/ (last updated Oct 22, 2026, checked Oct 29, 2026).
 
-What it does, per those docs:
-- If your origin already serves a robots.txt, Cloudflare puts its managed content (rules for known AI crawlers plus its Content Signals Policy text) **before** your file in one response. If you have no file, it creates one.
-- Its defaults come from Cloudflare, not from you. The docs show `search=yes` and `ai-train=no` under `User-Agent: *`, and Cloudflare deliberately leaves `ai-input` out.
-- The settings live in the Cloudflare dashboard under the zone's security / bot settings (AI bot policies). Menu names change, so search the dashboard for "robots.txt".
+When it adds anything, quoted from that page:
 
-Watch out:
-- If you also add your own `Content-Signal` lines, the response can contain two policies. Pick one source. Either turn off the managed option and keep your own lines, or use the managed option and set its values to match what the owner chose.
-- The managed option can also add `Disallow` rules for AI crawlers. That blocks access. If the owner wants AI tools to read and cite the site, check the live file for new `Disallow` lines.
+> Cloudflare prepends managed directives and the Content Signals Policy to your `robots.txt` only when **Enable Bot Preference Sync** is turned on and at least one of your Search, Agent, or Training policies is set to **Block**, **Block on pages with ads**, or, for Training, **Disallow**. With every policy set to allow, there is nothing to prepend and your `robots.txt` is served unchanged.
+
+What that means for this skill:
+- **If the owner wants all three signals set to `yes`, this feature can't do it.** With every policy on allow, Cloudflare adds no `Content-Signal` line. Put the lines in your own robots.txt (the sections above).
+- **If it is on, it does more than add signals.** The example on that page prepends `Content-signal: search=yes, ai-train=no, use=reference` under `User-Agent: *`, then `Disallow: /` groups for Amazonbot, Applebot-Extended, Bytespider, CCBot, ClaudeBot, Google-Extended, GPTBot and meta-externalagent. Those `Disallow` lines block those crawlers entirely. If the owner wants AI tools to read and cite the site, check the live file for them.
+- Cloudflare's block goes **before** your own file in the same response, so your groups and its groups can both apply. Pick one source of signals. If you write your own `Content-Signal` lines, turn off Bot Preference Sync or make its policies match the owner's choice.
+- Cloudflare writes `Content-signal` (lowercase s). Match case-insensitively when you count lines.
+- The settings are in the Cloudflare dashboard: Security Settings, filter by Bot traffic, then Configure AI bot policies (as of that doc's date).
+
+Separately, the page says Free plan domains that have no robots.txt and don't use this feature serve Cloudflare's Content Signals Policy text at `/robots.txt`. That text defines the signals but sets no preferences.
 
 ## Anything else
 
