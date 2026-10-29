@@ -18,7 +18,7 @@ The scanner's score is not the goal. Search and AI-answer traffic is. Do the che
 
 ## 1. Scan
 
-The scanner script lives in this skill's own folder, not in the user's repo. Your working directory is the user's repo, so call it by full path. Set `SKILL_DIR` to the directory this SKILL.md is in (for example `~/.claude/skills/agent-ready`):
+The scanner script lives in this skill's own folder, not in the user's repo. Your working directory is the user's repo, so call it by full path. Set `SKILL_DIR` to the directory this SKILL.md is in (for example `~/.claude/skills/agent-ready`). Shell variables don't carry over between commands, so set it again in every command that uses it:
 
 ```sh
 SKILL_DIR=~/.claude/skills/agent-ready   # the folder containing this SKILL.md
@@ -137,6 +137,7 @@ Ship it the way the project ships (PR, merge, deploy). Hosted platforms: save an
 ## 7. Prove it live and rescan
 
 ```sh
+SKILL_DIR=~/.claude/skills/agent-ready   # the folder containing this SKILL.md
 curl -s https://example.com/robots.txt | grep -ci '^content-signal:'   # equals the group count
 curl -s -o /dev/null -w '%{http_code}\n' https://example.com/          # 200
 node "$SKILL_DIR/scripts/scan.mjs" https://example.com                  # Level 2, exit 0

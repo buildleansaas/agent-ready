@@ -96,6 +96,7 @@ const GROUPS: { userAgents: string[]; allow?: string[]; disallow?: string[] }[] 
 ];
 
 const SITEMAPS = ["https://www.example.com/sitemap.xml"]; // from the old file
+// If the old file also had Host or Crawl-delay lines, add them here and print them in GET() the same way.
 
 export const dynamic = "force-static";
 
@@ -169,7 +170,7 @@ Content-Signal: search=yes, ai-input=yes, ai-train=yes
 
 The signal lands after the group's rules rather than right after `User-agent`. It is still inside the group, which is what matters.
 
-Mind the whitespace markers. The tags around the signal line deliberately have no `-` on the side touching it (`{%- endfor %}` before it, `{% if` after it). A `-` there would strip the line break and could join the signal onto the next group's `User-agent` line, which breaks that group. An extra blank line in the output is harmless.
+Mind the whitespace markers. The tags around the signal line deliberately have no `-` on the side touching it (`{%- endfor %}` before it, `{% if` after it). A `-` there would strip the line break and could join the signal onto the next group's `User-agent` line, which breaks that group. Check the output for a blank line between a group's last rule and its `Content-Signal` line too. Some older parsers treat a blank line as the end of a group, so remove it if you see one.
 
 Test it safely:
 1. Save a copy of the current live `/robots.txt`.
