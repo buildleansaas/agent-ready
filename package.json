@@ -1,0 +1,15 @@
+{
+  "name": "agent-ready",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Make your website agent-ready: score it on isitagentready.com and add Content Signals to robots.txt. A Claude Code skill.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --test && node scripts/scan.mjs --help"
+  }
+}
